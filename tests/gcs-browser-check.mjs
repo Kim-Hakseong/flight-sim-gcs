@@ -97,6 +97,15 @@ try {
   await sleep(4000);
   check('browser telemetry reaches the GCS (GLOBAL_POSITION_INT)', got(33).length > 0, `(${got(33).length} frames)`);
 
+  // GCS DISARM (COMMAND_LONG 400, param1=0) must cut the sim's engine
+  toBridge(commandLong(400));
+  let disarmed = false;
+  for (let i = 0; i < 20; i++) { if ((await ev(`window.__arm()`)) === false) { disarmed = true; break; } await sleep(250); }
+  check('GCS DISARM disarms the sim', disarmed);
+  await sleep(600);
+  const thr = await ev(`window.__hils.diag.thr`);
+  check('DISARM cuts the throttle to 0', thr === 0, `(thr=${thr})`);
+
   sock.close();
 } finally {
   if (bridge) bridge.kill('SIGKILL');

@@ -90,6 +90,25 @@ try {
       `lat=${g.lat.toFixed(4)} lon=${g.lon.toFixed(4)} relAlt=${(g.relAltMm / 1000).toFixed(0)}m hdg=${(g.hdg / 100).toFixed(0)}`);
   }
 
+  // 2b) sim-authoritative mode/arm reflected in HEARTBEAT (M2)
+  const postTele = (extra) => fetch(`http://localhost:${HTTP}/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ x: 0, z: 0, y: 0, altitude: 100, headingDeg: 0, ...extra }) });
+  rx.length = 0;
+  await postTele({ mode: 'AUTO', armed: true });
+  await sleep(1300);
+  let hb = got(MSG.HEARTBEAT);
+  check('HEARTBEAT reflects sim AUTO', hb.length > 0 && (heartbeatBaseMode(hb[hb.length - 1]) & 0x04) !== 0,
+    hb.length ? `base_mode=0x${heartbeatBaseMode(hb[hb.length - 1]).toString(16)}` : '');
+  rx.length = 0;
+  await postTele({ mode: 'MANUAL', armed: false });
+  await sleep(1300);
+  hb = got(MSG.HEARTBEAT);
+  const bm = hb.length ? heartbeatBaseMode(hb[hb.length - 1]) : 0;
+  check('HEARTBEAT reflects sim MANUAL + DISARMED', hb.length > 0 && (bm & 0x04) === 0 && (bm & 0x80) === 0,
+    `base_mode=0x${bm.toString(16)}`);
+  // restore armed for the mission-start check
+  await postTele({ mode: 'MANUAL', armed: true });
+  await sleep(300);
+
   // 3) mission upload handshake (2 waypoints)
   rx.length = 0;
   toBridge(encodeMissionCount({ targetSystem: 1, targetComponent: 1, count: 2 }));

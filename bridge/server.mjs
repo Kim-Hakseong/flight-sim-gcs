@@ -273,6 +273,15 @@ function metersPerDegLon(latDeg) {
 function relayTelemetry(t) {
   const time_boot_ms = (Date.now() - bootMs) >>> 0;
 
+  // The sim is authoritative for mode/arm — drive the HEARTBEAT base_mode from what
+  // it reports, so the GCS shows the vehicle's TRUE state (AUTO vs MANUAL, armed) (M2).
+  if (t.mode === 'AUTO' || t.mode === 'MANUAL') {
+    let base = 0;
+    if (t.armed !== false) base |= MODE_ARMED;
+    base |= t.mode === 'AUTO' ? MODE_AUTO : MODE_MANUAL;
+    modeFlags = base;
+  }
+
   // Sim coord → world geodetic.
   // Convention: sim +X = east, sim -Z = north, sim +Y = up.
   const dLat = (-t.z) / METER_PER_DEG_LAT;

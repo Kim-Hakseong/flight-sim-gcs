@@ -471,6 +471,7 @@ let navDegraded = false;                   // FDE: GPS measurements being reject
 let navDegradedHold = 0;                   // frames to hold the warning (hysteresis)
 let gpsRejectStreak = 0;                    // consecutive rejected frames → sustained fault
 let simTime = 0;                            // mission-elapsed clock (engineering bench)
+let armed = true;                           // GCS arm state (disarm = engine cut). M2.
 
 // Atmospheric wind (M22): aerodynamics use (velocity − wind). Default calm.
 //   setWind(eastMps, northMps, gustMps)  e.g. setWind(8, 0, 4) = 8 m/s crosswind + gusts
@@ -675,8 +676,16 @@ window.addEventListener('touchstart', bootAudioOnce);
 // HOME defaults match bridge/server.mjs (RKSI).
 const HOME = { lat: 37.4602, lon: 126.4407, alt: 7 };
 connectMissionLink(HOME);
-// getEventSource() remains available for the GCS phase (same SSE pipe).
-getEventSource();
+// GCS arm/disarm (M2): the bridge broadcasts `mode { armed, auto }` on a SET_MODE
+// or ARM_DISARM command. Apply the arm bit to the sim; the engine cut takes effect
+// in stepSimAndControl and is reflected back to the GCS via telemetry.
+{
+  const es = getEventSource();
+  if (es) es.addEventListener('mode', (e) => {
+    try { const d = JSON.parse(e.data); if (typeof d.armed === 'boolean') armed = d.armed; } catch { /* ignore */ }
+  });
+}
+if (typeof window !== 'undefined') window.__arm = (v) => { if (v != null) armed = !!v; return armed; };
 
 function resetAircraft() {
   sim.position.set(0, aircraft.userData.gearOffset, RUNWAY_START_Z);
@@ -775,6 +784,10 @@ function stepSimAndControl(dt) {
     sim.flaps = apOut.flaps || 0;
     sim.spoilers = apOut.spoilers || 0;
   }
+
+  // Armed gate (M2): a GCS DISARM cuts the engine — throttle to idle regardless of
+  // pilot / autopilot / GCS command. The airframe still flies (glides) on its energy.
+  if (!armed) controls.throttle = 0;
 
   // Wind (M22): evolve the gust once per frame; stepPhysics reads currentWind.
   // A boundary-layer shear scales the wind to ≈0 on the runway (so the ground
@@ -1415,7 +1428,7 @@ function pushHud() {
     status: sim.status + (controls.paused ? ' · PAUSED' : ''),
     qgcOnline: isBridgeOnline(),
     navDegraded,
-    mode: apActive ? `AUTO·${apPhase}` : 'MANUAL',
+    mode: !armed ? 'DISARMED' : (apActive ? `AUTO·${apPhase}` : 'MANUAL'),
     missionSeq: apActive ? apSeq : null,
     missionLen: apLen,
     damage: sim.damage,
@@ -1445,6 +1458,10 @@ function pushHud() {
     throttle01: controls.throttle,
     vsi: sim.vsi,
     missionSeq: apActive ? apSeq : -1,
+    // The sim is authoritative for mode/arm — the bridge maps these into the
+    // HEARTBEAT so the GCS shows the vehicle's TRUE state (M2).
+    mode: apActive ? 'AUTO' : 'MANUAL',
+    armed,
   };
   maybeSend(mergeMeasuredIntoTelemetry(truthTelemetry, measured), performance.now());
 

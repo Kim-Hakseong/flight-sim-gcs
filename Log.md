@@ -56,3 +56,27 @@ Append one entry per loop (format in CLAUDE.md §5). Newest at the bottom.
   (auto-connects UDP 14550) → telemetry shows; upload a mission + MISSION_START flies it.
 - Headless re-verify: `npm run gcs-check`; browser loop: start Chrome with
   --remote-debugging-port=PORT then `node tests/gcs-browser-check.mjs PORT`.
+
+## 2026-06-24 — M2: faithful mode & arm (GCS sees + controls the vehicle state)
+
+**Status**: GREEN (mode sync + arm/disarm act on the sim; verified headless)
+**Files changed**: src/main.js (armed state + mode/armed telemetry + disarm throttle-cut + HUD), bridge/server.mjs (HEARTBEAT from sim mode/arm), tests/gcs-loop-check.mjs + tests/gcs-browser-check.mjs (assertions)
+**Tests**: 194 unit PASS · console 0 · autoland PASS · gcs-loop-check 13/13 · gcs-browser-check 7/7
+**Decisions**:
+- The live QGC screenshot showed a mismatch: sim flying AUTO·APPROACH but QGC showed
+  "Manual" — the bridge tracked only GCS-commanded mode, not the sim's real mode.
+- **Sim is now authoritative for mode/arm.** Telemetry carries `mode` (AUTO/MANUAL) and
+  `armed`; the bridge maps these into the HEARTBEAT base_mode, so QGC shows the vehicle's
+  TRUE state. Verified: telemetry mode=AUTO → base_mode 0x84 (AUTO|ARMED); mode=MANUAL,
+  armed=false → 0x40 (MANUAL, disarmed).
+- **GCS ARM/DISARM acts on the sim.** COMMAND_LONG 400 → bridge broadcasts `mode {armed}`
+  → sim sets `armed`; disarm cuts the throttle to idle in stepSimAndControl (the airframe
+  glides). Reflected back to QGC via telemetry → HEARTBEAT. Sim HUD shows DISARMED.
+  Verified end-to-end: GCS disarm → sim __arm()=false → throttle=0.
+- `window.__arm(bool)` added for tests. Armed defaults true → autoland unchanged.
+**Next**:
+- M3: GUIDED + nav commands — NAV_TAKEOFF / NAV_LAND / RTL via COMMAND_LONG driving the
+  autopilot; GCS-set target position (reposition) with position feedback.
+**Notes**:
+- Verify in QGC: arm/disarm from QGC now flips the sim's engine + the displayed mode
+  tracks AUTO vs MANUAL. `npm run gcs-check` for the packet-level regression.
