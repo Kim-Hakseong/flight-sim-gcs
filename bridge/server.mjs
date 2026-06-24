@@ -223,23 +223,6 @@ const server = createServer((req, res) => {
     return;
   }
 
-  // Multiplayer: peers POST their pose; we re-broadcast to everyone.
-  if (req.method === 'POST' && req.url === '/mp/state') {
-    let body = '';
-    req.on('data', c => { body += c; });
-    req.on('end', () => {
-      try {
-        const t = JSON.parse(body);
-        broadcast('mp_state', t);
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('{"ok":true}');
-      } catch (e) {
-        res.writeHead(400); res.end(String(e && e.message || e));
-      }
-    });
-    return;
-  }
-
   // HITL: external simulator pushes vehicle state here. We just rebroadcast.
   if (req.method === 'POST' && req.url === '/hitl/state') {
     let body = '';
@@ -480,7 +463,7 @@ function handleCommandLong(p) {
 // ---------- Boot ----------
 
 server.listen(HTTP_PORT, () => {
-  console.log('--- flight-sim2 ↔ QGroundControl bridge ---');
+  console.log('--- flight-sim-gcs ↔ QGroundControl bridge ---');
   console.log(`  Sim served at:  http://localhost:${HTTP_PORT}/`);
   console.log(`  MAVLink TX → UDP ${QGC_HOST}:${QGC_PORT}`);
   console.log(`  MAVLink RX ← UDP 0.0.0.0:${BIND_PORT}`);
